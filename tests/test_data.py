@@ -185,3 +185,114 @@ def test_paging_terminates_when_the_feed_runs_dry():
                              closed_only=False, session=sess)
     assert len(bars) == 120
     assert sess.calls <= 3, f"ran {sess.calls} requests against a dry feed"
+
+
+# --- transient failures -----------------------------------------------------
+# Paging turned ~35 requests per gate run into ~350. At that volume a transient
+# 504 stops being unlikely and becomes near-certain, and without a retry one
+# blip discards an entire multi-minute backtest. A 90-day run died exactly this
+# way on LINKUSDT 4h.
+
+class _FlakySession:
+    """Fails the first `fail_times` calls, then serves one short page."""
+
+    def __init__(self, fail_times, exc=None, status=504):
+        self.fail_times, self.calls = fail_times, 0
+        self.exc, self.status = exc, status
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            if self.exc:
+                raise self.exc
+            raise requests_http_error(self.status)
+
+        class _R:
+            status_code = 200
+            headers = {}
+
+            @staticmethod
+            def raise_for_status():
+                pass
+
+            @staticmethod
+            def json():
+                return {"code": 0, "data": [[1_600_000_000_000, "1", "2",
+                                             "0.5", "1.5", "10",
+                                             1_600_000_899_999, "15", 3,
+                                             "5", "7", "0"]]}
+
+        return _R()
+
+
+def requests_http_error(status):
+    import requests
+    resp = requests.Response()
+    resp.status_code = status
+    return requests.HTTPError(f"{status} Server Error", response=resp)
+
+
+def test_transient_5xx_is_retried_rather_than_losing_the_run(monkeypatch):
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)
+    sess = _FlakySession(fail_times=2)
+    bars = data.fetch_klines("BTCUSDT", "15m", closed_only=False, session=sess)
+    assert len(bars) == 1
+    assert sess.calls == 3, "should have retried twice then succeeded"
+
+
+def test_connection_errors_are_retried_too(monkeypatch):
+    import requests
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)
+    sess = _FlakySession(fail_times=1, exc=__import__("requests").ConnectionError("reset"))
+    bars = data.fetch_klines("BTCUSDT", "15m", closed_only=False, session=sess)
+    assert len(bars) == 1
+
+
+def test_persistent_failure_still_raises(monkeypatch):
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)
+    sess = _FlakySession(fail_times=99)
+    with pytest.raises(data.FetchError):
+        data.fetch_klines("BTCUSDT", "15m", closed_only=False, session=sess)
+    assert sess.calls <= data.MAX_RETRIES + 1, "must give up, not retry forever"
+
+
+def test_client_errors_are_not_retried(monkeypatch):
+    """A 400 means the request is wrong; repeating it just burns rate limit."""
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)
+    sess = _FlakySession(fail_times=99, status=400)
+    with pytest.raises(data.FetchError):
+        data.fetch_klines("BTCUSDT", "15m", closed_only=False, session=sess)
+    assert sess.calls == 1
+
+
+def test_418_aborts_immediately_rather_than_digging_in(monkeypatch):
+    """418 is an IP ban that escalates from 2 minutes to 3 days for repeat
+    offenders. Backing off inside a run that lasts minutes cannot outlive it,
+    and knocking again is what extends it."""
+    monkeypatch.setattr(data.time, "sleep", lambda *_: None)
+    sess = _FlakySession(fail_times=99, status=418)
+    with pytest.raises(data.FetchError):
+        data.fetch_klines("BTCUSDT", "15m", closed_only=False, session=sess)
+    assert sess.calls == 1, "a ban must not be retried"
+
+
+def test_429_is_retried_and_honours_retry_after(monkeypatch):
+    slept = []
+    monkeypatch.setattr(data.time, "sleep", lambda s: slept.append(s))
+
+    class _RateLimited(_FlakySession):
+        def get(self, *a, **k):
+            self.calls += 1
+            if self.calls <= self.fail_times:
+                import requests
+                resp = requests.Response()
+                resp.status_code = 429
+                resp.headers["Retry-After"] = "3"
+                raise requests.HTTPError("429", response=resp)
+            return super().get(*a, **k)
+
+    sess = _RateLimited(fail_times=1)
+    sess.calls = 0
+    bars = data.fetch_klines("BTCUSDT", "15m", closed_only=False, session=sess)
+    assert len(bars) == 1
+    assert 3.0 in slept, f"should have waited the advertised 3s, slept {slept}"
