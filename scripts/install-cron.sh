@@ -31,11 +31,19 @@ existing=$(sed -n "/^${MARK}$/,/^${ENDMARK}$/p" "$BACKUP" | grep -cvE '^\s*(#|$)
   sed "/^${MARK}$/,/^${ENDMARK}$/d" "$BACKUP"
   cat <<CRON
 ${MARK}
-# SHADOW MODE: TRADING_ENABLED=false in .env. The trader logs the decisions it
-# would take and places no orders. Do not flip that flag because these lines
-# exist -- the go-live gate has not passed.
+# SHADOW MODE: TRADING_ENABLED=false in .env AND --dry-run on the trader.
+#
+# --dry-run is not belt-and-braces, it is load-bearing. Without it the trader
+# sees TRADING_ENABLED=false, logs one line and exits before deciding anything
+# -- the shadow record would be an empty log that looks like a quiet market.
+# With it, the full cycle runs and logs every entry, exit and rejection while
+# placing no orders and saving no ledger state.
+#
+# Removing --dry-run does NOT enable trading (TRADING_ENABLED still gates it);
+# it silently stops the bot from thinking. Both must change to go live, and
+# the go-live gate has not passed.
 2,17,32,47 * * * * cd ${ROOT} && .venv/bin/python -m tokocrypto.snapshot >> ${ROOT}/logs/snapshot.log 2>&1
-6,21,36,51 * * * * cd ${ROOT} && .venv/bin/python -m tokocrypto.trader >> ${ROOT}/logs/trader.log 2>&1
+6,21,36,51 * * * * cd ${ROOT} && .venv/bin/python -m tokocrypto.trader --dry-run >> ${ROOT}/logs/trader.log 2>&1
 10 */4 * * * /root/claude-routines/run-routine.sh tokocrypto-review >> /root/claude-routines/logs/cron.log 2>&1
 ${ENDMARK}
 CRON
