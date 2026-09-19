@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -180,6 +181,93 @@ OBSERVED_ROUND_TRIP_PCT = (TAKER_FEE_PCT * 2 + TAX_PCT) * 100   # = 0.41%
 # bot into a coin whose hourly range cannot pay its own fees.
 MAX_FEE_DRAG_R = 0.28            # fees may not exceed 28% of 1R
 MIN_ATR_PCT = OBSERVED_ROUND_TRIP_PCT / MAX_FEE_DRAG_R / STOP_ATR_MULT
+
+# --- tuning overlay -------------------------------------------------------
+# memory/tuning.json is how the walk-forward tuner changes the strategy. It is
+# a JSON overlay rather than an edit to this file so a change is one diff, one
+# revert, and one git object holding the evidence that justified it.
+#
+# What is NOT here matters more than what is. RISK_PCT, MAX_POSITIONS,
+# MAX_FEE_DRAG_R, TAKER_FEE_PCT and TAX_PCT are absent, so no optimiser can
+# reach them. Sizing up and making fees look cheaper both "improve" a backtest
+# without improving anything, and they are the first two things a search finds.
+TUNING_PATH = MEMORY_DIR / "tuning.json"
+
+TUNABLE = {
+    "ENTRY_ADX_MIN":      (10.0, 40.0),
+    "ENTRY_ADX_MIN_CAUTIOUS": (15.0, 45.0),
+    "ENTRY_RSI_MIN":      (30.0, 60.0),
+    "ENTRY_RSI_MAX":      (60.0, 90.0),
+    "BLOWOFF_RSI":        (70.0, 95.0),
+    "LATE_ENTRY_DAY_PCT": (2.0, 25.0),
+    "TP_R":               (1.0, 6.0),
+    "TRAIL_ATR_MULT":     (1.0, 8.0),
+    "RISK_OFF_TRAIL_ATR_MULT": (1.0, 8.0),
+    "TIME_STOP_HOURS":    (6, 360),
+    "STOP_ATR_MULT":      (1.0, 3.0),   # upper bound re-pinned to the default below
+}
+
+_DEFAULTS = {name: globals()[name] for name in TUNABLE}
+
+
+def apply_tuning(path=None):
+    """Overlay memory/tuning.json onto the knobs in TUNABLE.
+
+    Returns the dict actually applied. Anything unknown, out of range, or
+    barred by an invariant is dropped rather than clamped: a clamped value
+    looks like an accepted proposal and hides that the search went somewhere
+    it should not have.
+    """
+    for name, value in _DEFAULTS.items():       # always start from the defaults
+        globals()[name] = value
+
+    try:
+        payload = json.loads((path or TUNING_PATH).read_text())
+        proposed = dict(payload.get("values") or {})
+    except (OSError, ValueError, AttributeError):
+        _rederive()
+        return {}
+
+    applied = {}
+    for name, value in proposed.items():
+        if name not in TUNABLE:
+            continue                            # unreachable knob
+        lo, hi = TUNABLE[name]
+        if name == "STOP_ATR_MULT":
+            hi = min(hi, _DEFAULTS["STOP_ATR_MULT"])   # tighten only, never widen
+        try:
+            value = type(_DEFAULTS[name])(value)
+        except (TypeError, ValueError):
+            continue
+        if not (lo <= value <= hi):
+            continue
+        applied[name] = value
+
+    # An inverted RSI band admits nothing and would silently stop all trading.
+    lo_rsi = applied.get("ENTRY_RSI_MIN", _DEFAULTS["ENTRY_RSI_MIN"])
+    hi_rsi = applied.get("ENTRY_RSI_MAX", _DEFAULTS["ENTRY_RSI_MAX"])
+    if lo_rsi >= hi_rsi:
+        applied.pop("ENTRY_RSI_MIN", None)
+        applied.pop("ENTRY_RSI_MAX", None)
+
+    for name, value in applied.items():
+        globals()[name] = value
+    _rederive()
+    return applied
+
+
+def _rederive():
+    """Re-solve the values computed from tunable ones.
+
+    MIN_ATR_PCT is solved from the stop distance, so tightening the stop
+    without re-deriving it would quietly let fees take a larger share of 1R —
+    the very thing the floor exists to forbid.
+    """
+    global MIN_ATR_PCT
+    MIN_ATR_PCT = OBSERVED_ROUND_TRIP_PCT / MAX_FEE_DRAG_R / STOP_ATR_MULT
+
+
+apply_tuning()
 
 # --- telegram -------------------------------------------------------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
