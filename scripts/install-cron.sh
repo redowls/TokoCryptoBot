@@ -17,6 +17,18 @@ ENDMARK="# --- end TokoCryptoBot ---"
 BACKUP="/root/claude-routines/backups/crontab.$(date +%Y%m%d-%H%M%S).pre-tokocrypto"
 
 mkdir -p "$(dirname "$BACKUP")" "$ROOT/logs"
+
+# Deploy the routine prompt and conf. /root/claude-routines is not a git repo,
+# so anything written only there is one `rm` from gone and is backed up nowhere.
+# The versioned copies in routines/ are the source of truth; this copies them
+# into place. Edit them HERE and re-run, never in /root/claude-routines — a
+# direct edit there is silently overwritten by the next run of this script.
+for f in tokocrypto-review.md tokocrypto-review.conf; do
+  if ! cmp -s "$ROOT/routines/$f" "/root/claude-routines/$f"; then
+    cp "$ROOT/routines/$f" "/root/claude-routines/$f"
+    echo "deployed routines/$f -> /root/claude-routines/$f"
+  fi
+done
 crontab -l > "$BACKUP" 2>/dev/null || : > "$BACKUP"
 echo "backed up current crontab -> $BACKUP"
 
