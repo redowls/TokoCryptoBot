@@ -15,10 +15,20 @@ def test_compute_returns_none_without_bars():
 
 def test_compute_emits_the_indicator_block():
     out = snapshot.compute_for_bars(_bars(120))
-    for key in ("last_close", "last_time", "ema8", "ema20", "ema55",
+    for key in ("last_close", "prev_close", "last_time", "ema8", "ema20", "ema55",
                 "rsi14", "atr14", "adx14", "vol20", "last_vol", "bar_count"):
         assert key in out
     assert out["bar_count"] == 120
+
+
+def test_compute_carries_the_previous_close_for_extras():
+    bars = _bars(120)
+    out = snapshot.compute_for_bars(bars)
+    assert out["prev_close"] == bars[-2]["c"]
+
+
+def test_single_bar_has_no_previous_close():
+    assert snapshot.compute_for_bars(_bars(1))["prev_close"] is None
 
 
 def test_fifteen_minute_timeframe_is_due_every_cycle():

@@ -25,6 +25,11 @@ def compute_for_bars(bars):
     vols = [b["v"] for b in bars]
     return {
         "last_close": closes[-1],
+        # The previous bar's close, so the trader can derive day-change and
+        # "is this close green" without a second round trip per symbol. At four
+        # cycles an hour that saved 80 API calls an hour for data the snapshot
+        # already held.
+        "prev_close": closes[-2] if len(closes) >= 2 else None,
         "last_time": bars[-1]["t"],
         "ema8": indicators.ema(closes, 8),
         "ema20": indicators.ema(closes, 20),
