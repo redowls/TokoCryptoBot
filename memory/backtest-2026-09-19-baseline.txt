@@ -1,0 +1,17 @@
+VERDICT: NO DEMONSTRATED EDGE
+
+  window        940 frames (15m clock)
+  equity        $1,000.00 -> $901.44  (-9.86%)
+  buy-and-hold  $946.40  (-4.75pp vs strategy)
+  max drawdown  10.74%
+
+  trades        11
+  true win rate 9%   (WIN 1 / SCRATCH 0 / FAIL 10)
+  stop rate     91%   <- any stop exit is a FAIL whatever the P&L sign
+  profit factor 0.08
+  payoff        0.82
+  fees paid     $16.27  (modelled at 0.310% per side)
+
+  This is a valid result, not a tuning prompt. Do not widen stops,
+  loosen filters, or search knobs to make it pass. Repeated failure
+  escalates to retire-or-rebuild.
