@@ -7,3 +7,4 @@ logs/
 data/snapshots/
 data/trades/
 *.lock
+data/symbols.json
