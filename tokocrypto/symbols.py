@@ -111,8 +111,17 @@ def round_qty(sym_pair, qty):
 
 
 def meets_minimums(sym_pair, qty, price):
-    if qty <= 0 or price <= 0:
-        return False
-    if qty < min_qty(sym_pair):
-        return False
-    return qty * price >= max(min_notional(sym_pair), config.MIN_ORDER_USDT)
+    """(ok, reason). The reason is what risk.sizing_reason reports to the log."""
+    if qty <= 0:
+        return False, "qty rounds to zero"
+    if price <= 0:
+        return False, "no price"
+    floor_qty = min_qty(sym_pair)
+    if qty < floor_qty:
+        return False, f"qty {qty:g} below minQty {floor_qty:g}"
+    floor = max(min_notional(sym_pair), config.MIN_ORDER_USDT)
+    notional = qty * price
+    if notional < floor:
+        return False, (f"notional {config.fmt_usdt(notional)} below minimum "
+                       f"{config.fmt_usdt(floor)}")
+    return True, "ok"

@@ -35,15 +35,20 @@ def test_round_qty_never_rounds_up(loaded):
 
 
 def test_meets_minimums_rejects_below_notional(loaded):
-    assert symbols.meets_minimums("BTC_USDT", 0.00004, 100_000.0) is False   # $4
+    ok, why = symbols.meets_minimums("BTC_USDT", 0.00004, 100_000.0)   # $4
+    assert ok is False
+    assert "notional" in why
 
 
 def test_meets_minimums_accepts_at_notional(loaded):
-    assert symbols.meets_minimums("BTC_USDT", 0.00006, 100_000.0) is True    # $6
+    ok, why = symbols.meets_minimums("BTC_USDT", 0.00006, 100_000.0)   # $6
+    assert ok is True, why
 
 
 def test_meets_minimums_rejects_below_min_qty(loaded):
-    assert symbols.meets_minimums("BTC_USDT", 0.000001, 100_000_000.0) is False
+    ok, why = symbols.meets_minimums("BTC_USDT", 0.000001, 100_000_000.0)
+    assert ok is False
+    assert "minQty" in why
 
 
 def test_unknown_symbol_falls_back_to_the_config_floor(loaded):
