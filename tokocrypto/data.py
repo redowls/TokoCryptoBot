@@ -64,6 +64,11 @@ def _rows(payload, label):
     raise FetchError(f"{label}: unexpected payload {payload!r:.120}")
 
 
+MAX_PAGE = 1000          # exchange hard cap per request
+MAX_PAGES = 400          # ~400k 15m bars; a stop so a bad `end` cannot spin
+PAGE_PAUSE_S = 0.12      # IP rate limits are weight-based; stay well under
+
+
 def fetch_klines(chart_symbol, interval, limit=500, start=None, end=None,
                  closed_only=True, now_ms=None, session=None):
     """OHLCV bars for one chart symbol ("BTCUSDT") and interval ("15m").
@@ -71,7 +76,53 @@ def fetch_klines(chart_symbol, interval, limit=500, start=None, end=None,
     Returns a list, oldest first, possibly empty. `start`/`end` are unix
     milliseconds. With `closed_only`, any trailing bar whose close time has not
     yet passed is dropped.
+
+    The exchange caps a response at 1000 bars and answers a wide window with
+    the OLDEST 1000 of it. Requesting 90 days therefore used to return ten days
+    from three months ago and look like a 90-day sample. When the window needs
+    more than one page this walks `startTime` forward until the window is
+    covered or the feed runs dry, so `days` means days.
     """
+    if start is not None and end is not None:
+        return _fetch_paged(chart_symbol, interval, int(start), int(end),
+                            closed_only, now_ms, session)
+    return _fetch_page(chart_symbol, interval, limit, start, end,
+                       closed_only, now_ms, session)
+
+
+def _fetch_paged(chart_symbol, interval, start, end, closed_only, now_ms, session):
+    out, seen, cursor = [], set(), start
+    for _ in range(MAX_PAGES):
+        page = _fetch_page(chart_symbol, interval, MAX_PAGE, cursor, end,
+                           closed_only, now_ms, session)
+        fresh = [b for b in page if b["t"] not in seen]
+        if not fresh:
+            break                      # dry feed, or the page repeated its edge
+        seen.update(b["t"] for b in fresh)
+        out.extend(fresh)
+        if len(page) < MAX_PAGE:
+            break                      # short page means the feed is exhausted
+        # Resume from the last bar's open time; the dedupe above drops the
+        # overlap, which is safer than guessing the interval's millisecond step.
+        nxt = _open_ms(page[-1])
+        if nxt is None or nxt <= cursor:
+            break                      # no forward progress — stop rather than spin
+        cursor = nxt
+        if PAGE_PAUSE_S:
+            time.sleep(PAGE_PAUSE_S)
+    out.sort(key=lambda b: b["t"])
+    return out
+
+
+def _open_ms(bar):
+    try:
+        return int(datetime.fromisoformat(bar["t"]).timestamp() * 1000)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _fetch_page(chart_symbol, interval, limit=500, start=None, end=None,
+                closed_only=True, now_ms=None, session=None):
     label = f"{chart_symbol} {interval}"
     params = {"symbol": chart_symbol, "interval": interval, "limit": limit}
     if start is not None:

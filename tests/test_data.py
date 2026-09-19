@@ -105,3 +105,83 @@ def test_http_failure_raises_fetcherror(monkeypatch):
     monkeypatch.setattr(data.requests, "get", lambda *a, **k: _FakeResp({}, status=418))
     with pytest.raises(data.FetchError):
         data.fetch_klines("BTCUSDT", "15m")
+
+
+# --- paging -----------------------------------------------------------------
+# fetch_klines does ONE request capped at 1000 bars. Asking for 90 days used to
+# return the oldest 1000 bars of that window -- a ~10-day sample from three
+# months ago, reported as if it were 90 days. Silent truncation, same class of
+# bug as CryptoAutoBot's unfollowed 4H cursor.
+
+class _PagingSession:
+    """Serves 15m bars from a synthetic infinite history, 1000 per request."""
+
+    MINUTE_MS = 60_000
+    STEP = 15 * MINUTE_MS
+
+    def __init__(self, origin_ms, total):
+        self.origin, self.total, self.calls = origin_ms, total, 0
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls += 1
+        start = int(params.get("startTime", self.origin))
+        end = int(params.get("endTime", self.origin + self.total * self.STEP))
+        limit = int(params.get("limit", 500))
+        rows = []
+        t = max(start - (start - self.origin) % self.STEP, self.origin)
+        while t <= end and len(rows) < limit:
+            if t >= self.origin + self.total * self.STEP:
+                break
+            rows.append([t, "1", "2", "0.5", "1.5", "10",
+                         t + self.STEP - 1, "15", 3, "5", "7", "0"])
+            t += self.STEP
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def raise_for_status():
+                pass
+
+            @staticmethod
+            def json():
+                return {"code": 0, "data": rows}
+
+        return _R()
+
+
+def test_paging_spans_the_whole_window_not_just_the_first_page():
+    origin = 1_600_000_000_000
+    total = 3500                       # 3.5 pages of 1000
+    sess = _PagingSession(origin, total)
+    end = origin + total * _PagingSession.STEP
+
+    bars = data.fetch_klines("BTCUSDT", "15m", start=origin, end=end,
+                             closed_only=False, session=sess)
+
+    assert len(bars) == total, f"expected {total} bars, got {len(bars)}"
+    assert sess.calls >= 4, "a 3500-bar window cannot come from fewer than 4 pages"
+
+
+def test_paging_returns_bars_in_order_without_duplicates():
+    origin = 1_600_000_000_000
+    sess = _PagingSession(origin, 2500)
+    end = origin + 2500 * _PagingSession.STEP
+
+    bars = data.fetch_klines("BTCUSDT", "15m", start=origin, end=end,
+                             closed_only=False, session=sess)
+    stamps = [b["t"] for b in bars]
+    assert stamps == sorted(stamps)
+    assert len(stamps) == len(set(stamps)), "paging must not repeat the edge bar"
+
+
+def test_paging_terminates_when_the_feed_runs_dry():
+    """A short history must not spin forever asking for more."""
+    origin = 1_600_000_000_000
+    sess = _PagingSession(origin, 120)
+    end = origin + 5000 * _PagingSession.STEP      # ask far beyond what exists
+
+    bars = data.fetch_klines("BTCUSDT", "15m", start=origin, end=end,
+                             closed_only=False, session=sess)
+    assert len(bars) == 120
+    assert sess.calls <= 3, f"ran {sess.calls} requests against a dry feed"
