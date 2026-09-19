@@ -112,3 +112,37 @@ def test_delta_is_omitted_rather_than_guessed(now_v, prev_v, expected):
     assert expected in review._delta(now_v, prev_v)
     if not expected:
         assert review._delta(now_v, prev_v) == ""
+
+
+def test_replay_main_records_its_verdict_for_the_review(tmp_path, monkeypatch):
+    """The gate and the report must not disagree: a replay run is what makes
+    the review stop saying 'the go-live gate has not run'."""
+    from tokocrypto import replay
+
+    monkeypatch.setattr(review, "BACKTEST_CACHE", tmp_path / "last-backtest.json")
+    monkeypatch.setattr(replay, "load_klines", lambda **k: {})
+    monkeypatch.setattr(replay, "build_history", lambda *a, **k: [])
+    monkeypatch.setattr(replay, "run", lambda *a, **k: dict(NO_EDGE, closed=[]))
+    monkeypatch.setattr(replay, "buy_and_hold", lambda *a, **k: 946.40)
+    monkeypatch.setattr(replay, "verdict", lambda *a, **k: "NO DEMONSTRATED EDGE")
+    monkeypatch.setattr(replay, "summarize", lambda *a, **k: "")
+
+    replay.main([])
+    assert review.load_backtest()["verdict"] == "NO DEMONSTRATED EDGE"
+
+
+def test_sensitivity_sweeps_do_not_overwrite_the_gate(tmp_path, monkeypatch):
+    """--fee-pct sweeps explore cost assumptions; they are not the gate and
+    must not be able to install a rosier verdict as the official one."""
+    from tokocrypto import replay
+
+    monkeypatch.setattr(review, "BACKTEST_CACHE", tmp_path / "last-backtest.json")
+    monkeypatch.setattr(replay, "load_klines", lambda **k: {})
+    monkeypatch.setattr(replay, "build_history", lambda *a, **k: [])
+    monkeypatch.setattr(replay, "run", lambda *a, **k: dict(NO_EDGE, closed=[]))
+    monkeypatch.setattr(replay, "buy_and_hold", lambda *a, **k: 946.40)
+    monkeypatch.setattr(replay, "verdict", lambda *a, **k: "PASSES (fantasy fees)")
+    monkeypatch.setattr(replay, "summarize", lambda *a, **k: "")
+
+    replay.main(["--no-cache"])
+    assert review.load_backtest() is None

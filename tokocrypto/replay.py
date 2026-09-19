@@ -353,6 +353,9 @@ def main(argv=None):
     p.add_argument("--equity", type=float, default=None, help="starting equity")
     p.add_argument("--symbols", default=None, help="comma-separated watchlist override")
     p.add_argument("--json", action="store_true", help="emit the raw result dict")
+    p.add_argument("--no-cache", action="store_true",
+                   help="do not record this run as the review's latest gate "
+                        "(use for sensitivity sweeps, which are not the gate)")
     args = p.parse_args(argv)
 
     syms = [s.strip().upper() for s in args.symbols.split(",")] if args.symbols else None
@@ -362,6 +365,13 @@ def main(argv=None):
     bench = buy_and_hold(history, start_equity=args.equity or config.DRY_RUN_EQUITY_USDT)
     result["buy_and_hold"] = round(bench, 2)
     result["verdict"] = verdict(result, bench)
+    # Cache it so the 4-hourly review reports this verdict instead of "the
+    # go-live gate has not run", and can show the delta against the previous
+    # gate. Imported here, not at module scope: review -> scorecard -> replay,
+    # so a top-level import would close a cycle.
+    if not args.no_cache:
+        from . import review
+        review.save_backtest(result)
     if args.json:
         printable = {k: v for k, v in result.items() if k != "closed"}
         print(json.dumps(printable, indent=2))
