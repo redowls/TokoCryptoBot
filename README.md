@@ -69,16 +69,37 @@ takes the two blocks separately to make that mistake hard to make by accident.
 **Any change that re-anchors R to a faster timeframe must re-derive the
 fee-drag ceiling first, not adjust it afterwards.**
 
-## Before first run
+## Status: shadow mode
+
+Cron is installed and the bot runs its full 15-minute cycle, but
+`TRADING_ENABLED=false`: it decides, logs what it would have done, and places
+no orders. That is deliberate. The gate below has failed twice, and the point
+of running is to grow a sample bigger than a dozen trades before anyone
+concludes anything.
 
 | Item | Status |
 | --- | --- |
+| Cron installed | ✅ shadow mode — `scripts/install-cron.sh` |
+| 4-hourly review routine | ✅ `tokocrypto-review`, delivers to Telegram |
+| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | ✅ set and verified |
 | `TOKOCRYPTO_API_KEY` / `_SECRET` | ❌ not set — trading impossible until they are |
 | IP whitelist (`185.202.236.11`) | ⏳ pending key creation |
-| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | ✅ set and verified |
 | Account funded (USDT) | ❌ empty |
 | Real fee tier confirmed | ❌ **seeded assumption** — see Cost model |
-| Backtest passes the go-live gate | ❌ **NO DEMONSTRATED EDGE** |
+| Backtest passes the go-live gate | ❌ **NO DEMONSTRATED EDGE**, twice |
+
+Gate history — the second run is not a re-report of the first, it is an
+independent window, and it came back worse:
+
+| Run | Window | Net | vs buy-and-hold | Trades | True win | Stop rate | PF |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-19 baseline | 940 frames | −9.86% | −4.75pp | 11 | 9% | 91% | 0.08 |
+| 2026-09-19 re-run | 940 frames | **−11.51%** | **−6.46pp** | 12 | 8% | 92% | 0.05 |
+
+A 92% stop rate means the strategy is almost never right about direction, and
+losing to buy-and-hold by a widening margin means the losses are not just
+costs. Two failures is not yet a retire-or-rebuild verdict on a sample this
+thin, but a third should be treated as one.
 
 Development and backtesting need none of these — every public endpoint works
 unauthenticated.
@@ -128,6 +149,19 @@ Installed cron:
 
 Offsets sit clear of CryptoAutoBot (`:05`/`:12`) and CryptoIndodaxBot
 (`:07`/`:14`) so the three bots never contend.
+
+Install or refresh them with `bash scripts/install-cron.sh` — never by hand.
+`crontab -` replaces the whole table, which on this VPS carries every other
+bot, so the script backs up first, touches only its own marked block, and
+restores the backup if the active line count moves by anything other than its
+own three lines.
+
+The review routine lives at `/root/claude-routines/tokocrypto-review.{md,conf}`
+and runs read-only: the `.conf` does not widen `run-routine.sh`'s default
+`ALLOWED_TOOLS`, so with no Write or Edit tool the routine is structurally
+unable to widen a stop, loosen a filter, or flip `TRADING_ENABLED`. Against a
+repeatedly-failing backtest, that is the temptation worth removing with tooling
+rather than with prose.
 
 ## Cost model
 
