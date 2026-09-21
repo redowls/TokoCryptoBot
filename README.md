@@ -73,9 +73,9 @@ fee-drag ceiling first, not adjust it afterwards.**
 
 Cron is installed and the bot runs its full 15-minute cycle, but
 `TRADING_ENABLED=false`: it decides, logs what it would have done, and places
-no orders. That is deliberate. The gate below has failed twice, and the point
-of running is to grow a sample bigger than a dozen trades before anyone
-concludes anything.
+no orders. That is deliberate. The gate has not passed, and the point of running
+is to grow a live sample alongside the backtest before anyone concludes
+anything.
 
 | Item | Status |
 | --- | --- |
@@ -86,20 +86,47 @@ concludes anything.
 | IP whitelist (`185.202.236.11`) | ⏳ pending key creation |
 | Account funded (USDT) | ❌ empty |
 | Real fee tier confirmed | ❌ **seeded assumption** — see Cost model |
-| Backtest passes the go-live gate | ❌ **NO DEMONSTRATED EDGE**, twice |
+| Backtest passes the go-live gate | ❌ **NO DEMONSTRATED EDGE** |
 
-Gate history — the second run is not a re-report of the first, it is an
-independent window, and it came back worse:
+Gate history. **Runs 1 and 2 are void as evidence about the strategy** — both
+predate `1a9d1fc`, which fixed `--days N` silently capping at the API's 1000-bar
+limit. They measured ~10 days and a dozen trades, not the window asked for. Run
+3 is the first valid measurement and supersedes them:
 
-| Run | Window | Net | vs buy-and-hold | Trades | True win | Stop rate | PF |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-09-19 baseline | 940 frames | −9.86% | −4.75pp | 11 | 9% | 91% | 0.08 |
-| 2026-09-19 re-run | 940 frames | **−11.51%** | **−6.46pp** | 12 | 8% | 92% | 0.05 |
+| Run | Window | Net | vs buy-and-hold | Trades | True win | Stop rate | PF | Payoff |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-19 baseline | 940 frames | −9.86% | −4.75pp | 11 | 9% | 91% | 0.08 | 0.82 |
+| 2026-09-19 re-run | 940 frames | −11.51% | −6.46pp | 12 | 8% | 92% | 0.05 | — |
+| **2026-09-19 paged** | **8,867 frames** | **−9.51%** | **−29.7pp** | **90** | **37%** | **58%** | **0.78** | **1.11** |
 
-A 92% stop rate means the strategy is almost never right about direction, and
-losing to buy-and-hold by a widening margin means the losses are not just
-costs. Two failures is not yet a retire-or-rebuild verdict on a sample this
-thin, but a third should be treated as one.
+The earlier reading — "a 92% stop rate means the strategy is almost never right
+about direction" — **was an artifact of the 11-trade sample and is retracted.**
+On 90 trades the true win rate is 37%, the stop rate 58% and the payoff 1.11.
+Direction is not the problem.
+
+Costs are. Run 3 decomposes as:
+
+```
+gross win   $328.06
+gross loss  $423.15
+net         −$95.09
+fees        $129.43     <- modelled, seeded at 0.31%/side
+```
+
+Net of fees the strategy loses $95. **Gross of fees it makes +$34.** The entire
+loss, and more, is transaction cost: 90 round trips at a 15-minute cadence
+against an edge too thin to pay for them. That is a different failure from a
+broken signal and it has different remedies — fewer and higher-conviction
+entries, maker rather than taker fills, or a `MIN_ATR_PCT` floor derived from
+the *real* fee tier rather than the seeded one.
+
+The buy-and-hold comparison is also worse than it first looks: the benchmark
+returned **+28.7%** over the same window while the bot returned −9.5%. The
+market rallied and the strategy lost money into it — the same shape as
+CryptoAutoBot's IMP-B03 finding.
+
+Confirming the real fee tier is now the highest-value missing input; every
+number above moves with it.
 
 Development and backtesting need none of these — every public endpoint works
 unauthenticated.
