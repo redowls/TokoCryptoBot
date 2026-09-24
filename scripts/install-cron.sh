@@ -56,7 +56,7 @@ ${MARK}
 # the go-live gate has not passed.
 2,17,32,47 * * * * cd ${ROOT} && .venv/bin/python -m tokocrypto.snapshot >> ${ROOT}/logs/snapshot.log 2>&1
 6,21,36,51 * * * * cd ${ROOT} && .venv/bin/python -m tokocrypto.trader --dry-run >> ${ROOT}/logs/trader.log 2>&1
-10 */4 * * * /root/claude-routines/run-routine.sh tokocrypto-review >> /root/claude-routines/logs/cron.log 2>&1
+10 */6 * * * /root/claude-routines/run-routine.sh tokocrypto-review >> /root/claude-routines/logs/cron.log 2>&1
 ${ENDMARK}
 CRON
 } | crontab -

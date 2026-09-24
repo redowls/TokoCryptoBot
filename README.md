@@ -80,7 +80,7 @@ anything.
 | Item | Status |
 | --- | --- |
 | Cron installed | ✅ shadow mode — `scripts/install-cron.sh` |
-| 4-hourly review routine | ✅ `tokocrypto-review`, delivers to Telegram |
+| 6-hourly review routine | ✅ `tokocrypto-review`, delivers to Telegram |
 | `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | ✅ set and verified |
 | `TOKOCRYPTO_API_KEY` / `_SECRET` | ❌ not set — trading impossible until they are |
 | IP whitelist (`185.202.236.11`) | ⏳ pending key creation |
@@ -151,7 +151,7 @@ tokocrypto/
   trader.py      the 15-minute cycle
   replay.py      kline-driven backtest over the real engines
   scorecard.py   pre-registered live decision criterion
-  review.py      4-hourly self-review report
+  review.py      6-hourly self-review report
 ```
 
 ## Running
@@ -162,7 +162,7 @@ python -m tokocrypto.trader --dry-run   # decide, place nothing
 python -m tokocrypto.replay --days 10   # backtest — the go-live gate
 python -m tokocrypto.replay --days 10 --fee-pct 0.005   # cost sensitivity
 python -m tokocrypto.scorecard          # live decision scorecard
-python -m tokocrypto.review             # the 4-hourly report
+python -m tokocrypto.review             # the 6-hourly report
 python -m pytest tests/ -q
 ```
 
@@ -171,7 +171,7 @@ Installed cron:
 ```cron
 2,17,32,47 * * * * cd /root/TokoCryptoBot && .venv/bin/python -m tokocrypto.snapshot >> logs/snapshot.log 2>&1
 6,21,36,51 * * * * cd /root/TokoCryptoBot && .venv/bin/python -m tokocrypto.trader   >> logs/trader.log 2>&1
-10 */4 * * * /root/claude-routines/run-routine.sh tokocrypto-review
+10 */6 * * * /root/claude-routines/run-routine.sh tokocrypto-review
 ```
 
 Offsets sit clear of CryptoAutoBot (`:05`/`:12`) and CryptoIndodaxBot

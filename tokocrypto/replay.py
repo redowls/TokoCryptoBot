@@ -365,7 +365,7 @@ def main(argv=None):
     bench = buy_and_hold(history, start_equity=args.equity or config.DRY_RUN_EQUITY_USDT)
     result["buy_and_hold"] = round(bench, 2)
     result["verdict"] = verdict(result, bench)
-    # Cache it so the 4-hourly review reports this verdict instead of "the
+    # Cache it so the 6-hourly review reports this verdict instead of "the
     # go-live gate has not run", and can show the delta against the previous
     # gate. Imported here, not at module scope: review -> scorecard -> replay,
     # so a top-level import would close a cycle.

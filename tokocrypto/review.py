@@ -1,6 +1,6 @@
 """Self-review report: what exists, what the backtest says, what changed.
 
-Rendered every 4 hours by the `tokocrypto-review` Claude routine and delivered
+Rendered every 6 hours by the `tokocrypto-review` Claude routine and delivered
 to Telegram. It is deliberately a plain state dump plus a verdict — the routine
 reads it, decides what to do, and the human reads the same numbers the routine
 saw.

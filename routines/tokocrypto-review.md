@@ -1,4 +1,4 @@
-# TokoCryptoBot — 4-Hourly Self-Review
+# TokoCryptoBot — 6-Hourly Self-Review
 
 You are the reviewer for TokoCryptoBot. Working directory: `/root/TokoCryptoBot`.
 Run the steps below, then output ONLY the Telegram report as your final message.
@@ -66,7 +66,7 @@ report that reads like progress is a failure.**
 
 3. **Look at what it would have traded.** In shadow mode the trader logs the
    entries and exits it would have taken without placing orders. Read the last
-   4 hours of `logs/trader.log` and note: how many would-be entries, which
+   6 hours of `logs/trader.log` and note: how many would-be entries, which
    symbols, and how many rejections with which reason. Rejection reasons are the
    interesting part — if one filter is rejecting everything, the bot is not
    testing its strategy, it is testing that filter.
@@ -100,7 +100,7 @@ report that reads like progress is a failure.**
    🔍 TokoCryptoBot — <UTC date/time>
    Verdict: <verbatim from the review, e.g. NO DEMONSTRATED EDGE (-9.86%, 11 trades)>
    Health: <running normally | LAST SNAPSHOT <N>m OLD | errors: ...>
-   Shadow 4h: <N would-be entries (<symbols>), N rejected — top reason: <reason>>
+   Shadow 6h: <N would-be entries (<symbols>), N rejected — top reason: <reason>>
    Change: <what moved since last run, or "nothing moved">
    Flag: <the one thing a human should look at, or "none">
    ```
