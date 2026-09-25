@@ -1,0 +1,47 @@
+window 4547 frames (15m clock), 45 days, buy-and-hold $1,296.72
+
+variant                     trades    net %  trueWin   stop%   lock%     PF  payoff       fees   maxDD
+--------------------------------------------------------------------------------------------------------
+off (as it runs)                57   -1.49%     42%    56%     30%   0.92    1.26     $86.39  12.73%
+peak from bar high only         60   -4.49%     45%    53%     42%   0.85    1.04     $89.68  14.34%
+pct 5/2.5 .. 20/16              59   -6.36%     37%    56%     32%   0.79    1.00     $87.21  16.91%
+pct + bar high                  63   -6.80%     41%    52%     44%   0.79    0.87     $93.95  16.17%
+pct tight 3/1.5, 6/4            64   -5.58%     31%    45%     45%   0.79    0.79     $95.54  15.45%
+pct wide 8/4, 15/11             58   -2.51%     41%    55%     31%   0.89    1.18     $87.07  13.64%
+
+A ladder that raises net% by cutting winners short still has to pay
+the same round trip per trade. Read the fees column beside the net.
+
+--- reading, written 2026-09-25 ---
+
+Ported from CryptoIndodaxBot: the percent profit ladder and ratcheting the peak
+off the bar high. Both measured here before either was enabled. BOTH STAY OFF.
+
+Every variant is worse than the baseline, and the damage is monotone in how
+much the ladder interferes:
+
+  off            -1.49%  PF 0.92  payoff 1.26  lock 30%
+  wide  8/15     -2.51%  PF 0.89  payoff 1.18  lock 31%
+  bar high only  -4.49%  PF 0.85  payoff 1.04  lock 42%
+  tight 3/6/10   -5.58%  PF 0.79  payoff 0.79  lock 45%
+  pct standard   -6.36%  PF 0.79  payoff 1.00  lock 32%
+  pct + bar high -6.80%  PF 0.79  payoff 0.87  lock 44%
+
+The mechanism is exactly the one predicted before the run: lock exits rise from
+30% to 42-45%, and payoff falls from 1.26 to as low as 0.79. The ladder converts
+trades that would have run into small locks. Every one of those still pays a
+full round trip, and this bot's known failure is fee drag — gross +$34 against
+-$129 of fees over the 90-trade gate run. Cutting winners shorter is the one
+change that attacks the weak side hardest.
+
+The wider the rungs, the less the damage, which is not a signal that some wider
+rung would help: it is the ladder doing less. There is no interior optimum here
+to search for, and per standing doctrine this is not a tuning prompt.
+
+CONTEXT THAT MATTERS MORE THAN ANY OF THIS: the baseline itself lost 1.49% over
+45 days while buy-and-hold made 29.67%. A 31-point shortfall. No exit tweak
+addresses that. The ported code and `replay --ladder` stay in the repo so this
+can be re-measured if the entry side ever demonstrates an edge.
+
+Single window (45 days, 4547 frames, 15m clock). Not re-run on a second window,
+because the conclusion is "change nothing" and the status quo needs no defence.

@@ -153,6 +153,25 @@ def profit_lock_trail(peak_gain, r, rungs=None):
     return min(reached) if reached else None
 
 
+def profit_lock_pct_level(entry, high_water, rungs=None):
+    """Highest percent rung the PEAK has reached, as a price, or None.
+
+    Rungs are (peak_pct, stop_pct) off the entry price. Taking the maximum means
+    a misordered rung set can only ever raise the floor, never drop it — the
+    same one-way guarantee `profit_lock_trail` gets from its minimum.
+
+    This is deliberately NOT volatility-scaled. The ATR ladder arms at a
+    different percentage gain on every coin, which is correct risk-wise and
+    impossible to reason about; this one says what it means.
+    """
+    rungs = config.PROFIT_LOCK_PCT_RUNGS if rungs is None else rungs
+    if not rungs or not entry or entry <= 0 or not high_water:
+        return None
+    peak_pct = (high_water / entry - 1) * 100.0
+    reached = [stop for peak, stop in rungs if peak_pct >= peak]
+    return entry * (1 + max(reached) / 100.0) if reached else None
+
+
 def check_levels(position, price):
     """Test a price against the exit levels ALREADY SET on a position.
 
@@ -207,7 +226,12 @@ def check_exit(position, signal_tf, anchor_tf, reg, hours_held):
     close = signal_tf["last_close"]     # 15m: reaction speed
     atr = anchor_tf.get("atr14")        # 1H: R geometry
     r = pos["entry_price"] - pos["initial_stop"]
-    pos["high_water"] = max(pos.get("high_water", pos["entry_price"]), close)
+    # The peak may ratchet off the bar's HIGH where the snapshot supplies one.
+    # A close is one price out of a bar; a high is a price that actually traded.
+    peak_price = close
+    if config.PEAK_FROM_BAR_HIGH:
+        peak_price = max(close, signal_tf.get("last_high") or 0.0)
+    pos["high_water"] = max(pos.get("high_water", pos["entry_price"]), peak_price)
     if atr and close - pos["entry_price"] >= r:
         mult = config.RISK_OFF_TRAIL_ATR_MULT if reg == "risk_off" else config.TRAIL_ATR_MULT
         pos["stop"] = max(pos["stop"], pos["high_water"] - mult * atr)
@@ -215,6 +239,12 @@ def check_exit(position, signal_tf, anchor_tf, reg, hours_held):
         trail = profit_lock_trail(pos["high_water"] - pos["entry_price"], r)
         if trail is not None:
             pos["lock"] = max(pos.get("lock") or 0.0, pos["high_water"] - trail * atr)
+    # The percent ladder feeds the SAME lock level, so `check_levels` picks it up
+    # for free. It needs no ATR, so it still works on a bar whose indicator went
+    # missing this cycle.
+    pct_level = profit_lock_pct_level(pos["entry_price"], pos["high_water"])
+    if pct_level is not None:
+        pos["lock"] = max(pos.get("lock") or 0.0, pct_level)
     # One source of truth for the comparisons, shared with the fast watcher.
     action = check_levels(pos, close)
     if action:

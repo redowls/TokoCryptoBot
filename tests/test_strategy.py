@@ -199,3 +199,61 @@ def test_candidates_rank_by_one_hour_adx():
     extras = {"ETH": EXTRAS, "SOL": EXTRAS}
     cands, _ = strategy.entry_candidates(snap, extras, set(), "risk_on")
     assert [s for s, _ in cands] == ["SOL", "ETH"]
+
+
+# --- ported from CryptoIndodaxBot: the percent ladder and the bar-high peak ---
+#
+# Both ship DISABLED here. That bot trades hourly IDR majors; this one trades
+# 15m USDT pairs and has no demonstrated edge yet, so nothing is enabled on the
+# strength of having worked somewhere else. These pin the mechanism so the
+# replay lab is measuring what it claims to measure.
+
+PCT_RUNGS = ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0))
+
+
+def test_the_percent_ladder_is_off_until_this_bot_s_own_data_supports_it():
+    assert config.PROFIT_LOCK_PCT_RUNGS == ()
+    assert config.PEAK_FROM_BAR_HIGH is False
+
+
+def test_a_reached_percent_rung_sets_the_floor_at_that_rung():
+    assert strategy.profit_lock_pct_level(100.0, 111.0, PCT_RUNGS) == pytest.approx(106.5)
+
+
+def test_no_rung_reached_leaves_no_floor():
+    assert strategy.profit_lock_pct_level(100.0, 104.0, PCT_RUNGS) is None
+
+
+def test_a_misordered_rung_set_can_only_ever_raise_the_floor():
+    scrambled = ((20.0, 16.0), (5.0, 2.5), (10.0, 6.5))
+    assert strategy.profit_lock_pct_level(100.0, 121.0, scrambled) == pytest.approx(116.0)
+
+
+def test_the_percent_floor_never_comes_back_down(monkeypatch):
+    monkeypatch.setattr(config, "PROFIT_LOCK_PCT_RUNGS", PCT_RUNGS)
+    _, high = strategy.check_exit(pos(high_water=120.0), tf(close=120.0), tf(atr=2.0),
+                                  "risk_on", 1.0)
+    p = dict(pos(high_water=120.0), lock=high["lock"])
+    _, later = strategy.check_exit(p, tf(close=107.0), tf(atr=2.0), "risk_on", 1.0)
+    assert later["lock"] == high["lock"]
+
+
+def test_the_peak_can_ratchet_off_the_bar_high_when_enabled(monkeypatch):
+    monkeypatch.setattr(config, "PEAK_FROM_BAR_HIGH", True)
+    signal = dict(tf(close=101.0), last_high=106.0)
+    _, updated = strategy.check_exit(pos(), signal, tf(atr=2.0), "risk_on", 1.0)
+    assert updated["high_water"] == 106.0
+
+
+def test_the_bar_high_is_ignored_while_the_knob_is_off():
+    signal = dict(tf(close=101.0), last_high=106.0)
+    _, updated = strategy.check_exit(pos(), signal, tf(atr=2.0), "risk_on", 1.0)
+    assert updated["high_water"] == 101.0
+
+
+def test_a_bar_high_below_the_peak_cannot_lower_it(monkeypatch):
+    monkeypatch.setattr(config, "PEAK_FROM_BAR_HIGH", True)
+    signal = dict(tf(close=103.0), last_high=99.0)
+    _, updated = strategy.check_exit(pos(high_water=108.0), signal, tf(atr=2.0),
+                                     "risk_on", 1.0)
+    assert updated["high_water"] == 108.0

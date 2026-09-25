@@ -18,6 +18,7 @@ of P&L, and "no demonstrated edge" is a valid verdict rather than a prompt to
 start turning knobs.
 """
 import argparse
+from contextlib import contextmanager
 import json
 import time
 from datetime import datetime, timedelta, timezone
@@ -345,6 +346,65 @@ def summarize(result, benchmark=None):
     return "\n".join(lines)
 
 
+# --- the ladder lab -------------------------------------------------------
+#
+# Two exit changes were ported from CryptoIndodaxBot on 2026-09-25: a percent
+# profit ladder (the user's own design) and ratcheting the peak off the bar high
+# instead of its close. NEITHER is enabled here on the strength of having worked
+# there. That bot trades hourly IDR majors; this one trades 15m USDT pairs and
+# has no demonstrated edge yet — its problem is fee drag, and a ladder that cuts
+# winners shorter while paying the same round trip makes fee drag WORSE before
+# it makes anything better. So they are measured here first, on this bot's data.
+
+LADDER_VARIANTS = [
+    ("off (as it runs)",        (),                                          False),
+    ("peak from bar high only", (),                                          True),
+    ("pct 5/2.5 .. 20/16",      ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0)), False),
+    ("pct + bar high",          ((5.0, 2.5), (10.0, 6.5), (15.0, 11.0), (20.0, 16.0)), True),
+    ("pct tight 3/1.5, 6/4",    ((3.0, 1.5), (6.0, 4.0), (10.0, 7.0)),       False),
+    ("pct wide 8/4, 15/11",     ((8.0, 4.0), (15.0, 11.0)),                  False),
+]
+
+
+@contextmanager
+def _exit_geometry(pct_rungs, peak_from_high):
+    """Swap the two ported knobs for one run, then put them back."""
+    old = (config.PROFIT_LOCK_PCT_RUNGS, config.PEAK_FROM_BAR_HIGH)
+    config.PROFIT_LOCK_PCT_RUNGS = pct_rungs
+    config.PEAK_FROM_BAR_HIGH = peak_from_high
+    try:
+        yield
+    finally:
+        config.PROFIT_LOCK_PCT_RUNGS, config.PEAK_FROM_BAR_HIGH = old
+
+
+def _ladder_lab(args):
+    klines = load_klines(days=args.days, session=None)
+    history = build_history(klines)
+    if not history:
+        print("no history")
+        return 1
+    bench = buy_and_hold(history)
+    print(f"window {len(history)} frames ({config.SIGNAL_TF} clock), "
+          f"{args.days} days, buy-and-hold {config.fmt_usdt(bench)}")
+    print(f"\n{'variant':26} {'trades':>7} {'net %':>8} {'trueWin':>8} "
+          f"{'stop%':>7} {'lock%':>7} {'PF':>6} {'payoff':>7} {'fees':>10} {'maxDD':>7}")
+    print("-" * 104)
+    for label, rungs, peak in LADDER_VARIANTS:
+        with _exit_geometry(rungs, peak):
+            r = run(history=history, fee_pct=args.fee_pct, start_equity=args.equity)
+        locks = sum(1 for t in r["closed"] if t.get("reason") == "lock")
+        lock_pct = (locks / r["trades"] * 100) if r["trades"] else None
+        print(f"{label:26} {r['trades']:>7} {r['net_pct']:>+7.2f}% "
+              f"{r['true_win_rate']:>7.0%} {r['stop_rate']:>6.0%} "
+              f"{(f'{lock_pct:.0f}%' if lock_pct is not None else '-'):>7} "
+              f"{(r['profit_factor'] or 0):>6.2f} {(r['payoff'] or 0):>7.2f} "
+              f"{config.fmt_usdt(r['fees']):>10} {r['max_drawdown']:>6.2f}%")
+    print("\nA ladder that raises net% by cutting winners short still has to pay")
+    print("the same round trip per trade. Read the fees column beside the net.")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="TokoCryptoBot backtest")
     p.add_argument("--days", type=int, default=10, help="replay window in days")
@@ -352,11 +412,16 @@ def main(argv=None):
                    help="override per-side cost as a fraction, e.g. 0.0031")
     p.add_argument("--equity", type=float, default=None, help="starting equity")
     p.add_argument("--symbols", default=None, help="comma-separated watchlist override")
+    p.add_argument("--ladder", action="store_true",
+                   help="score the ported exit variants (percent ladder, bar-high "
+                        "peak) on this bot's own data before any is enabled")
     p.add_argument("--json", action="store_true", help="emit the raw result dict")
     p.add_argument("--no-cache", action="store_true",
                    help="do not record this run as the review's latest gate "
                         "(use for sensitivity sweeps, which are not the gate)")
     args = p.parse_args(argv)
+    if args.ladder:
+        return _ladder_lab(args)
 
     syms = [s.strip().upper() for s in args.symbols.split(",")] if args.symbols else None
     klines = load_klines(symbols=syms, days=args.days)

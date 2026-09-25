@@ -1,0 +1,22 @@
+{
+  "start_equity": 1000.0,
+  "end_equity": 904.9,
+  "net_pct": -9.51,
+  "max_drawdown": 15.85,
+  "frames": 8867,
+  "fee_rate": 0.0031,
+  "trades": 90,
+  "win": 33,
+  "scratch": 5,
+  "fail": 52,
+  "stop_rate": 0.5777777777777777,
+  "true_win_rate": 0.36666666666666664,
+  "profit_factor": 0.7752806333451495,
+  "payoff": 1.1105371234403494,
+  "gross_win": 328.06,
+  "gross_loss": 423.15,
+  "fees": 129.43,
+  "buy_and_hold": 1287.21,
+  "verdict": "NO DEMONSTRATED EDGE",
+  "recorded_at": "2026-09-19T06:46:34.710750+00:00"
+}

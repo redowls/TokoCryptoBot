@@ -133,6 +133,17 @@ TRAIL_ATR_MULT = 4.0        # trail distance once >= +1R
 RISK_OFF_TRAIL_ATR_MULT = 3.0  # tighter trail while BTC regime is risk_off
 TP_R = 2.5                  # hard take-profit in R multiples
 PROFIT_LOCK_RUNGS = ((1.5, 1.0),)
+# Percent profit ladder, the user's own design: once the PEAK is this far above
+# entry, the floor moves to that percentage of entry and never comes down. The
+# ATR ladder above is volatility-scaled and so arms at a different gain on every
+# coin; this one is the rule a person can actually hold in their head.
+# Ported from CryptoIndodaxBot 2026-09-25 and left EMPTY here: that bot's rungs
+# were measured on hourly IDR majors, this one trades 15m USDT pairs and has no
+# demonstrated edge yet (it fails on fee drag, not signal). Rungs go in only
+# once this bot's own replay supports them.
+PROFIT_LOCK_PCT_RUNGS = ()
+# Ratchet the peak off the bar HIGH as well as its close. Off until measured.
+PEAK_FROM_BAR_HIGH = False
 
 # Clock-based, NOT bar-based. The cycle is four times faster than
 # CryptoIndodaxBot's but these are wall-clock durations, so they carry over
@@ -210,23 +221,30 @@ TUNABLE = {
 _DEFAULTS = {name: globals()[name] for name in TUNABLE}
 
 
-def apply_tuning(path=None):
-    """Overlay memory/tuning.json onto the knobs in TUNABLE.
+def apply_tuning(path=None, values=None):
+    """Overlay tuned knobs onto the module, from `values` or memory/tuning.json.
 
     Returns the dict actually applied. Anything unknown, out of range, or
     barred by an invariant is dropped rather than clamped: a clamped value
     looks like an accepted proposal and hides that the search went somewhere
     it should not have.
+
+    `values` lets the tuner evaluate a candidate without writing a file, so a
+    search that crashes halfway cannot leave a half-applied experiment on disk
+    as if it were an accepted change.
     """
     for name, value in _DEFAULTS.items():       # always start from the defaults
         globals()[name] = value
 
-    try:
-        payload = json.loads((path or TUNING_PATH).read_text())
-        proposed = dict(payload.get("values") or {})
-    except (OSError, ValueError, AttributeError):
-        _rederive()
-        return {}
+    if values is not None:
+        proposed = dict(values)
+    else:
+        try:
+            payload = json.loads((path or TUNING_PATH).read_text())
+            proposed = dict(payload.get("values") or {})
+        except (OSError, ValueError, AttributeError):
+            _rederive()
+            return {}
 
     applied = {}
     for name, value in proposed.items():

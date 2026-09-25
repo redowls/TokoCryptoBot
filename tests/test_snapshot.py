@@ -102,3 +102,13 @@ def test_run_carries_the_previous_snapshot_into_the_next_cycle(monkeypatch, tmp_
     # Second cycle should reuse 1H/4H/1D from the first.
     snapshot.run(now=datetime(2026, 9, 19, 14, 17, tzinfo=timezone.utc))
     assert set(calls) == {"15m", "30m"}
+
+
+def test_the_block_records_the_closed_bar_s_high_beside_its_close():
+    """The peak ladder needs a price that actually traded, not just the close."""
+    bars = [{"o": 1.0, "h": 2.0, "l": 0.5, "c": 1.5, "v": 10.0,
+             "t": f"2026-09-25T00:{i:02d}:00+00:00"} for i in range(60)]
+    bars[-1]["h"] = 9.0
+    block = snapshot.compute_for_bars(bars)
+    assert block["last_high"] == 9.0
+    assert block["last_close"] == 1.5

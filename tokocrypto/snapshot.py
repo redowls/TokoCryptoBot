@@ -30,6 +30,12 @@ def compute_for_bars(bars):
         # cycles an hour that saved 80 API calls an hour for data the snapshot
         # already held.
         "prev_close": closes[-2] if len(closes) >= 2 else None,
+        # High of the same (closed) bar. A close is one price out of a whole
+        # bar, sampled at the boundary; a high is a price the market actually
+        # traded at, which is the only honest basis for "the best this trade has
+        # been". Ported from CryptoIndodaxBot, where reading the peak off the
+        # close alone left a stop at -6,60% on a bar that reached +5,40%.
+        "last_high": highs[-1],
         "last_time": bars[-1]["t"],
         "ema8": indicators.ema(closes, 8),
         "ema20": indicators.ema(closes, 20),
